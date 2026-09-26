@@ -89,7 +89,7 @@ async def tsum_panel(interaction: discord.Interaction):
     )
 
     embed = discord.Embed(
-        title="🎮 ツムツム代行（無料）",
+        title="🎮 ツムツム代行",
         description=(
             "**ご利用方法**\n"
             "1️⃣ 「代行を依頼する」を押す\n"
