@@ -96,7 +96,7 @@ async def tsum_panel(interaction: discord.Interaction):
             "2️⃣ 実行したいメニューを選択\n"
             "3️⃣ LINEログイン情報を入力\n"
             "4️⃣ 自動で処理を実行\n\n"
-            "**メニュー（すべて無料）**\n"
+            "**メニュー**\n"
             f"{menu_text}\n\n"
             "※ LINEログイン情報はJSON等へ保存しません。"
         ),
