@@ -30,8 +30,8 @@ TSUM_DEBUG = os.getenv("TSUM_DEBUG", "0") == "1"
 TSUM_GACHA_DEBUG = os.getenv("TSUM_GACHA_DEBUG", "1") == "1"
 GACHA_DIAGNOSTIC_FORCE = True
 TSUM_GACHA_MAX_CALLS = max(1, int(os.getenv("TSUM_GACHA_MAX_CALLS", "500") or "500"))
-TSUM_APP_VER = os.getenv("TSUM_APP_VER", "12.9.2").strip() or "12.9.2"
-TSUM_RES_VER = os.getenv("TSUM_RES_VER", "12.9.0").strip() or "12.9.0"
+TSUM_APP_VER = os.getenv("TSUM_APP_VER", "12.10.1").strip() or "12.10.1"
+TSUM_RES_VER = os.getenv("TSUM_RES_VER", "12.10.1").strip() or "12.10.1"
 
 @dataclass
 class TsumInfo:
@@ -571,6 +571,8 @@ class LGTMTMClient:
             return dict(urllib.parse.parse_qsl(raw))
 
     def _update_session(self, resp: dict):
+        # _update_session の先頭あたりに追加してレスポンス構造を調べる
+        print(f"[*] Debug resp: {resp}")
         if "hash" in resp and resp["hash"]:
             self.HASH = resp["hash"]
 
