@@ -571,8 +571,6 @@ class LGTMTMClient:
             return dict(urllib.parse.parse_qsl(raw))
 
     def _update_session(self, resp: dict):
-        # _update_session の先頭あたりに追加してレスポンス構造を調べる
-        print(f"[*] Debug resp: {resp}")
         if "hash" in resp and resp["hash"]:
             self.HASH = resp["hash"]
 
