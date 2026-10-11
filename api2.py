@@ -919,16 +919,27 @@ class LGTMTMClient:
         return eventinfo.get("card", 0) > 0
     async def game_start(self, tsum_id: int) -> dict:
         params = self._base_params()
-        id=0
-        id=await self.get_event_id()
-        if(await self.is_event_joined(await self.get_event(id))==False):
-            id=0
-        return await self._post("/gameStart.nhn", {
+        id = 0
+        id = await self.get_event_id()
+        if (await self.is_event_joined(await self.get_event(id)) == False):
+            id = 0
+            
+        payload = {
             "requestid": params.pop("requestid"),
-            "tsumid": tsum_id, "eventid":id, "plazaeventid": 0,
+            "tsumid": tsum_id, "eventid": id, "plazaeventid": 0,
             "hearttype": 0, "probmstver": 2, "bonusflg": 0,
             **params,
-        })
+        }
+        
+        # ★追加：実際に送っているパラメータを確認する
+        print(f"[DEBUG] game_start payload: {payload}")
+        
+        res = await self._post("/gameStart.nhn", payload)
+        
+        # ★追加：サーバーから返ってきたレスポンス全体をログに出力する
+        print(f"[DEBUG] game_start response: {res}")
+        
+        return res
 
     async def game_end(self,tsum_id:int, score: int = 0, coin: int = 0, exp: int = 0,
                        medal: int = 0, play_code: str = None) -> dict:
