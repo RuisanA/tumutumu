@@ -464,28 +464,69 @@ class LineOAuthLogin:
                 else:
                     print(f"[OAuth] LINEアプリに入力する確認コード: {verification_code}")
 
-            print("[OAuth] Step 5: consent")
-            async with session.post(
-                f"{self.BASE_URL}/oauth2/v2.1/authorize/consent",
-                data=[
-                    ("addFriend", "true"), ("allPermission", "P"), ("approvedPermission", "P"),
-                    ("allPermission", "F"), ("approvedPermission", "F"),
-                    ("allPermission", "M"), ("approvedPermission", "M"),
-                    ("allPermission", "TUK"), ("approvedPermission", "TUK"),
-                    ("channelId", self.CLIENT_ID), ("addFriendMode", "ALREADY_FRIENDED_MODE"),
-                    ("__csrf", csrf_token), ("lang", "ja"), ("allow", "true"),
-                ],
-                headers={
-                    "User-Agent": self.UA_BROWSER, "Origin": self.BASE_URL,
-                    "Content-Type": "application/x-www-form-urlencoded",
-                    "Referer": last_url, "Upgrade-Insecure-Requests": "1",
-                },
-                allow_redirects=False,
-            ) as resp:
-                location = resp.headers.get("Location", "")
+            # LINE updates the browser session asynchronously after the code is
+            # entered in the phone app.  Reload the verification page and retry
+            # consent briefly so we do not submit consent before that update has
+            # reached this session.
+            attempts = 15 if verification_code else 1
+            code = None
+            location = ""
+            for attempt in range(attempts):
+                if attempt:
+                    await asyncio.sleep(2)
+                    async with session.get(
+                        last_url,
+                        headers={"User-Agent": self.UA_BROWSER, "Referer": login_url},
+                        allow_redirects=False,
+                    ) as resp:
+                        refresh_location = resp.headers.get("Location", "")
 
-            code = urllib.parse.parse_qs(urllib.parse.urlparse(location).query).get("code", [None])[0]
+                    refreshed_code = urllib.parse.parse_qs(
+                        urllib.parse.urlparse(refresh_location).query
+                    ).get("code", [None])[0]
+                    if refreshed_code:
+                        code = refreshed_code
+                        break
+                    if refresh_location:
+                        refreshed_url = urllib.parse.urljoin(last_url, refresh_location)
+                        if refreshed_url.startswith(("https://", "http://")):
+                            last_url = refreshed_url
+
+                    cookies = {c.key: c.value for c in session.cookie_jar}
+                    csrf_token = cookies.get("X-SCGW-CSRF-Token", csrf_token)
+
+                print(f"[OAuth] Step 5: consent ({attempt + 1}/{attempts})")
+                async with session.post(
+                    f"{self.BASE_URL}/oauth2/v2.1/authorize/consent",
+                    data=[
+                        ("addFriend", "true"), ("allPermission", "P"), ("approvedPermission", "P"),
+                        ("allPermission", "F"), ("approvedPermission", "F"),
+                        ("allPermission", "M"), ("approvedPermission", "M"),
+                        ("allPermission", "TUK"), ("approvedPermission", "TUK"),
+                        ("channelId", self.CLIENT_ID), ("addFriendMode", "ALREADY_FRIENDED_MODE"),
+                        ("__csrf", csrf_token), ("lang", "ja"), ("allow", "true"),
+                    ],
+                    headers={
+                        "User-Agent": self.UA_BROWSER, "Origin": self.BASE_URL,
+                        "Content-Type": "application/x-www-form-urlencoded",
+                        "Referer": last_url, "Upgrade-Insecure-Requests": "1",
+                    },
+                    allow_redirects=False,
+                ) as resp:
+                    location = resp.headers.get("Location", "")
+
+                code = urllib.parse.parse_qs(
+                    urllib.parse.urlparse(location).query
+                ).get("code", [None])[0]
+                if code:
+                    break
+
             if not code:
+                if verification_code:
+                    raise ValueError(
+                        "LINEアプリでの二段階認証完了を確認できませんでした。"
+                        "コードを入力したLINEアカウントを確認してから、再度お試しください。"
+                    )
                 raise ValueError("ログインに失敗しました。メアパスが間違っています。")
             print(f"[OAuth] code: {code}")
 
