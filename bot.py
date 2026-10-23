@@ -60,7 +60,6 @@ class TsumBot(discord.Client):
         print(f"🌐 Web server started on port {PORT}")
                 
     async def setup_hook(self):
-        await self.start_web_server() 
         # persistent view
         self.add_view(mod_stum.TsumPanelView())
         self.add_view(mod_stum.TsumTrialPanelView())
