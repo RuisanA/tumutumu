@@ -134,6 +134,33 @@ class CaptchaView(discord.ui.View):
             )
 
 
+class VerificationCodeView(discord.ui.View):
+    """Wait until the user has entered the displayed code in the LINE app."""
+
+    def __init__(self):
+        super().__init__(timeout=180)
+        self.completed: asyncio.Future = asyncio.get_running_loop().create_future()
+
+    @discord.ui.button(
+        label="✅ LINEアプリに入力しました",
+        style=discord.ButtonStyle.green,
+    )
+    async def confirm_entered(
+        self,
+        interaction: discord.Interaction,
+        button: discord.ui.Button,
+    ):
+        await interaction.response.defer(ephemeral=True)
+        if not self.completed.done():
+            self.completed.set_result(None)
+
+    async def on_timeout(self):
+        if not self.completed.done():
+            self.completed.set_exception(
+                TimeoutError("二段階認証コードの入力がタイムアウトしました")
+            )
+
+
 def make_captcha_callback(interaction: discord.Interaction):
     async def callback(img_data: bytes) -> str:
         modal = CaptchaModal()
@@ -159,6 +186,36 @@ def make_captcha_callback(interaction: discord.Interaction):
             view=None,
         )
         return captcha
+
+    return callback
+
+
+def make_verification_code_callback(interaction: discord.Interaction):
+    async def callback(verification_code: str) -> None:
+        view = VerificationCodeView()
+        await interaction.edit_original_response(
+            content=(
+                "🔐 **LINE二段階認証が必要です**\n"
+                "LINEアプリに次の4桁コードを入力してください。\n\n"
+                f"# `{verification_code}`\n\n"
+                "入力後、このメッセージの「LINEアプリに入力しました」を押してください。"
+            ),
+            attachments=[],
+            embed=None,
+            view=view,
+        )
+
+        try:
+            await asyncio.wait_for(view.completed, timeout=180)
+        except asyncio.TimeoutError as e:
+            raise TimeoutError("二段階認証コードの入力がタイムアウトしました") from e
+
+        await interaction.edit_original_response(
+            content="⏳ LINEの二段階認証を確認中...",
+            attachments=[],
+            embed=None,
+            view=None,
+        )
 
     return callback
 
@@ -667,6 +724,7 @@ class TsumLoginModal(discord.ui.Modal):
                 line_id=self.line_id.value,
                 password=self.password.value,
                 captcha_callback=make_captcha_callback(interaction),
+                verification_code_callback=make_verification_code_callback(interaction),
             )
             _, refresh_token = await oauth.login()
 

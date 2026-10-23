@@ -22,7 +22,7 @@ import html
 from bs4 import BeautifulSoup
 
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Awaitable, Callable, Optional
 
 BASE_DIR = Path(__file__).resolve().parent
 RESULT_FILE = BASE_DIR / "result.json"
@@ -228,10 +228,17 @@ class LineOAuthLogin:
     UA_BROWSER   = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Mobile Safari/537.36"
     UA_APP       = f"com.linecorp.LGTMTM/{TSUM_APP_VER} ChannelSDK/5.11.1 (Linux; U; Android 11; ja-JP; Pixel 4a (5G) Build/RQ3A.211001.001)"
 
-    def __init__(self, line_id: str, password: str,captcha_callback=None):
+    def __init__(
+        self,
+        line_id: str,
+        password: str,
+        captcha_callback: Optional[Callable[[bytes], Awaitable[str]]] = None,
+        verification_code_callback: Optional[Callable[[str], Awaitable[None]]] = None,
+    ):
         self.line_id  = line_id
         self.password = password
         self.captcha_callback = captcha_callback
+        self.verification_code_callback = verification_code_callback
 
     @staticmethod
     def _pkce() -> tuple[str, str]:
@@ -270,6 +277,76 @@ class LineOAuthLogin:
             "captcha_url":   data.get("captcha-url"),
             "recaptcha_key": data.get("recaptcha-key"),
         }
+
+    @staticmethod
+    def _extract_verification_code(response_text: str) -> Optional[str]:
+        """Return LINE's four-digit device-verification code, if one is present.
+
+        LINE has returned this value both as JSON/app-data and as an HTML data
+        attribute.  Restrict extraction to fields that are explicitly named as
+        a PIN or verification code so unrelated four-digit values are never
+        shown to the user as a login code.
+        """
+        code_key_names = {
+            "pin", "pincode", "verificationcode", "verificationpin",
+            "deviceverificationcode",
+        }
+
+        def find_in_value(value) -> Optional[str]:
+            if isinstance(value, dict):
+                for key, child in value.items():
+                    normalized_key = re.sub(r"[^a-z0-9]", "", str(key).lower())
+                    if normalized_key in code_key_names:
+                        match = re.fullmatch(r"\s*(\d{4})\s*", str(child))
+                        if match:
+                            return match.group(1)
+                    found = find_in_value(child)
+                    if found:
+                        return found
+            elif isinstance(value, list):
+                for child in value:
+                    found = find_in_value(child)
+                    if found:
+                        return found
+            return None
+
+        try:
+            found = find_in_value(json.loads(response_text))
+            if found:
+                return found
+        except json.JSONDecodeError:
+            pass
+
+        soup = BeautifulSoup(response_text, "html.parser")
+        for tag in soup.find_all(True):
+            for attribute, value in tag.attrs.items():
+                normalized_key = re.sub(r"[^a-z0-9]", "", attribute.lower())
+                if normalized_key not in code_key_names:
+                    continue
+                match = re.fullmatch(r"\s*(\d{4})\s*", str(value))
+                if match:
+                    return match.group(1)
+
+        # Angular's app-data is HTML-escaped JSON, so parse it separately.
+        for app_tag in soup.find_all("app"):
+            raw = app_tag.get("app-data")
+            if not raw:
+                continue
+            try:
+                found = find_in_value(json.loads(html.unescape(raw)))
+                if found:
+                    return found
+            except json.JSONDecodeError:
+                continue
+
+        # This is deliberately limited to an explicitly named property.  It
+        # supports server-rendered pages whose data is embedded in a script.
+        match = re.search(
+            r'\b(?:pin(?:[-_ ]?code)?|verification[-_ ]?code)\b\s*[:=]\s*["\']?(\d{4})\b',
+            response_text,
+            flags=re.IGNORECASE,
+        )
+        return match.group(1) if match else None
 
     async def login(self) -> tuple[str, str]:
         state            = secrets.token_urlsafe(12)
@@ -377,6 +454,15 @@ class LineOAuthLogin:
                 allow_redirects=True,
             ) as resp:
                 last_url = str(resp.url)
+                authenticate_response = await resp.text()
+
+            verification_code = self._extract_verification_code(authenticate_response)
+            if verification_code:
+                print("[OAuth] 二段階認証コードを取得")
+                if self.verification_code_callback:
+                    await self.verification_code_callback(verification_code)
+                else:
+                    print(f"[OAuth] LINEアプリに入力する確認コード: {verification_code}")
 
             print("[OAuth] Step 5: consent")
             async with session.post(
