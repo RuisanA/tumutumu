@@ -46,18 +46,18 @@ class TsumBot(discord.Client):
         super().__init__(intents=discord.Intents.default())
         self.tree = app_commands.CommandTree(self)
         self.web_runner = None
-        
-        async def start_web_server(self):
-            async def health(request):
-                return web.Response(text="OK")
-                app = web.Application()
-                app.router.add_get("/", health)
-                app.router.add_get("/health", health)
-                self.web_runner = web.AppRunner(app)
-                await self.web_runner.setup()
-                site = web.TCPSite(self.web_runner, "0.0.0.0", PORT)
-                await site.start()
-                print(f"🌐 Web server started on port {PORT}")
+    
+    async def start_web_server(self):
+        async def health(request):
+            return web.Response(text="OK")
+        app = web.Application()
+        app.router.add_get("/", health)
+        app.router.add_get("/health", health)
+        self.web_runner = web.AppRunner(app)
+        await self.web_runner.setup()
+        site = web.TCPSite(self.web_runner, "0.0.0.0", PORT)
+        await site.start()
+        print(f"🌐 Web server started on port {PORT}")
                 
     async def setup_hook(self):
         await self.start_web_server() 
