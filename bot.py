@@ -51,8 +51,8 @@ class TsumBot(discord.Client):
         async def health(request):
             return web.Response(text="OK")
         app = web.Application()
-        app.router.add_get("/", health)
-        app.router.add_get("/health", health)
+        app.router.add_route("*", "/", health)
+        app.router.add_route("*", "/health", health)
         self.web_runner = web.AppRunner(app)
         await self.web_runner.setup()
         site = web.TCPSite(self.web_runner, "0.0.0.0", PORT)
