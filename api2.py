@@ -348,6 +348,42 @@ class LineOAuthLogin:
         )
         return match.group(1) if match else None
 
+    @staticmethod
+    def _two_factor_diagnostics(response_text: str, page_url: str) -> str:
+        """Return safe structure-only diagnostics for an unknown LINE 2FA page.
+
+        Values, query strings, cookies, and tokens are deliberately excluded.
+        This lets an operator share the log when LINE changes its internal
+        two-factor flow without exposing account or session information.
+        """
+        soup = BeautifulSoup(response_text, "html.parser")
+
+        def path_only(value: str) -> Optional[str]:
+            parsed = urllib.parse.urlparse(html.unescape(value))
+            path = parsed.path
+            return path if path.startswith("/") else None
+
+        form_actions = {
+            path for form in soup.find_all("form")
+            if (path := path_only(str(form.get("action", ""))))
+        }
+        script_sources = {
+            path for script in soup.find_all("script")
+            if (path := path_only(str(script.get("src", ""))))
+        }
+        wait_paths = {
+            path_only(match)
+            for match in re.findall(r'["\'](/[^"\']*(?:wait|poll|verify|confirm)[^"\']*)["\']', response_text, re.I)
+            if path_only(match)
+        }
+        page_path = urllib.parse.urlparse(page_url).path
+        return (
+            f"page={page_path or '/'} "
+            f"forms={sorted(form_actions)[:5]} "
+            f"wait_paths={sorted(wait_paths)[:5]} "
+            f"scripts={sorted(script_sources)[:5]}"
+        )
+
     async def login(self) -> tuple[str, str]:
         state            = secrets.token_urlsafe(12)
         verifier, challenge = self._pkce()
@@ -459,6 +495,10 @@ class LineOAuthLogin:
             verification_code = self._extract_verification_code(authenticate_response)
             if verification_code:
                 print("[OAuth] 二段階認証コードを取得")
+                print(
+                    "[OAuth] 2FA診断: "
+                    + self._two_factor_diagnostics(authenticate_response, last_url)
+                )
                 if self.verification_code_callback:
                     await self.verification_code_callback(verification_code)
                 else:
